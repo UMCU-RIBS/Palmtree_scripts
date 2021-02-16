@@ -128,22 +128,17 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
         if readData == 1
 
             % read the samples
-            sampleCount = zeros(header.numRows, 1);
-            samples = zeros(header.numRows, header.numColumns - 1);
+            samples = nan(header.numRows, header.numColumns);
             for iRow = 1:header.numRows
 
                 % read the samplecounter
-                sampleCount(iRow) = fread(fileID, 1, 'uint32');
+                samples(iRow, 1) = fread(fileID, 1, 'uint32');
 
                 % read the rest of the values
-                samples(iRow, 1:header.numColumns - 1) = fread(fileID, header.numColumns - 1, 'double');
+                samples(iRow, 2:header.numColumns) = fread(fileID, header.numColumns - 1, 'double');
 
             end
-            clear i;
-
-            % concatenate count and other columns
-            samples = horzcat(sampleCount, samples);
-            clear sampleCount;
+            clear iRow;
 
         end
         
