@@ -33,14 +33,6 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
     header = [];
     samples = [];
     
-    % remove the extension from the filepath if there is one
-    [pathstr, name, extension] = fileparts(inputFilepath);
-    clear pathstr pathstr;
-    
-    fileType = 2;           % 0 = source, 1 = pipeline, 2 = plugin
-    if strcmpi(extension, '.src'),      fileType = 0;   end
-    if strcmpi(extension, '.dat'),      fileType = 1;   end
-	
     % check if the dat input file exist
     if exist(inputFilepath, 'file') == 0
         fprintf(2, ['Error: data file ', strrep(inputFilepath, '\', '\\'), ' does not exist\n']);
@@ -48,7 +40,7 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
     end
 
     % open the file
-    fileID = fopen(inputFilepath);
+    fileID = fopen(inputFilepath, 'rb', 'l');
     if fileID == -1
         fprintf(2, ['Error: could not open data file ', inputFilepath, '\n']);
         return;
@@ -107,6 +99,11 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
     % extra fields and reading the data
     %
     
+    % determine the file type
+    fileType = 2;           % 0 = source, 1 = pipeline, 2 = plugin
+    if strcmpi(header.code, 'src'),      fileType = 0;   end
+    if strcmpi(header.code, 'dat'),      fileType = 1;   end
+	
     %
     if (header.version == 1)
         
