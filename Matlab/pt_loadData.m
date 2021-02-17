@@ -11,12 +11,13 @@
 %                             If set to 1, both the header and the data will be read
 %
 %   Returns: 
-%       header       = The data header information as a struct, includes information such as
-%                      the sampling rate, number of streams and stream names
+%       header       = The data header information as a struct, includes information such as the sampling
+%                      rate, number of streams and stream names. Returns as much of the header as possible
 % 		samples      = A matrix holding the data. The first column will be the sample-number, the second
 %                      column holds the number of milliseconds that have passed since the last sample, and the 
 %                      remaining columns represent the sample values that streamed through the pipeline (the header
 %                      information can be used to find the exact channel(s) and where in the pipeline.
+%                      Returns empty on failure
 %   
 %   Copyright (C) 2021, Max van den Boom (Lab of Nick Ramsey, University Medical Center Utrecht, The Netherlands)
 
@@ -150,15 +151,19 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
 
         % determine the highest number of samples that any source stream (.src) or any stream in the pipeline (.dat) would want to log
         header.maxSamplesStream = max([header.streams.samplesPerPackage]);
-            
+        
         % read the headers of all the packages
         % Note: Needs to be performed first to establish .totalSamples. With .totalSamples calculated
         %       the readPackages can allocate a matrix big enough for the data on the second call)
-        header = readPackages(fileID, header, fileType, 0);
-        
-        % read the data (if needed)
-        if readData
-            [header, samples] = readPackages(fileID, header, fileType, readData);
+        [success, header] = readPackages(fileID, header, fileType, 0);
+        if success == 1
+
+            % read the data (if needed)
+            if readData
+                [success, header, samples] = readPackages(fileID, header, fileType, readData);
+                if success == 0,    samples = [];       end
+            end
+            
         end
         
     end
@@ -170,12 +175,14 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
 end
 
 % if readData, assumes header.totalSamples is correct
-function [header, samples] = readPackages(fileID, header, fileType, readData)
-
+function [success, header, samples] = readPackages(fileID, header, fileType, readData)
+    success = 0;
+    samples = [];
+    
     % set the read cursor at the start of the data
     fseek(fileID, header.posDataStart, 'bof');
     
-    % when reading the data, 
+    % when reading the data
     if readData
         
         % allocate a data matrix (based on the header information, make
@@ -198,7 +205,7 @@ function [header, samples] = readPackages(fileID, header, fileType, readData)
     end
 
     % loop as long as there another sample-package header is available
-    while (ftell(fileID) + packageHeaderSize <= header.filesize)
+    while ftell(fileID) + packageHeaderSize <= header.filesize
 
         % read the sample-package header
         if readData == 1
@@ -217,7 +224,7 @@ function [header, samples] = readPackages(fileID, header, fileType, readData)
             
             % loop as long as there are streams left for this sample-package and there is
             % another sample-chunk header available (uint16 + uint16 = 4 bytes)
-            while (iStream < header.numStreams && ftell(fileID) + 4 <= header.filesize)
+            while iStream < header.numStreams && ftell(fileID) + 4 <= header.filesize
 
                 % retrieve the number of streams from the sample-chunk header
                 numStreams          = fread(fileID, 1, 'uint16');
@@ -360,7 +367,10 @@ function [header, samples] = readPackages(fileID, header, fileType, readData)
             
             
         end
-        
-    end     % end sample-packages loop    
     
+    end     % end sample-packages loop    
+
+    % return success
+    success = 1;
+
 end
