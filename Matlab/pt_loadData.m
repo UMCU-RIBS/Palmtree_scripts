@@ -4,7 +4,7 @@
 %   pipeline data (.dat) file contains the data streams that went into the pipeline and - if 
 %   enabled - the output of the filter modules and application modules.
 %
-%   [header, samples] = pt_loadData(filepath, readData)
+%   [header, data] = pt_loadData(filepath, readData)
 %
 %       filepath            = path to a run data file
 %       readData (optional) = If set to 0 (default), only the header will be read.
@@ -13,7 +13,7 @@
 %   Returns: 
 %       header       = The data header information as a struct, includes information such as the sampling
 %                      rate, number of streams and stream names. Returns as much of the header as possible
-% 		samples      = A matrix holding the data. The first column will be the sample-number, the second
+% 		data         = A matrix holding the data. The first column will be the sample-number, the second
 %                      column holds the number of milliseconds that have passed since the last sample, and the 
 %                      remaining columns represent the sample values that streamed through the pipeline (the header
 %                      information can be used to find the exact channel(s) and where in the pipeline.
@@ -27,12 +27,12 @@
 %   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 %   You should have received a copy of the GNU General Public License along with this program.  If not, see <https://www.gnu.org/licenses/>.
 %
-function [header, samples] = pt_loadData(inputFilepath, readData)
+function [header, data] = pt_loadData(inputFilepath, readData)
     if ~exist('readData', 'var') || isempty(readData),  readData = [];   end    
 
     % default return values
     header = [];
-    samples = [];
+    data = [];
     
     % check if the dat input file exist
     if exist(inputFilepath, 'file') == 0
@@ -129,14 +129,14 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
         if readData == 1
 
             % read the samples
-            samples = nan(header.numRows, header.numColumns);
+            data = nan(header.numRows, header.numColumns);
             for iRow = 1:header.numRows
 
                 % read the samplecounter
-                samples(iRow, 1) = fread(fileID, 1, 'uint32');
+                data(iRow, 1) = fread(fileID, 1, 'uint32');
 
                 % read the rest of the values
-                samples(iRow, 2:header.numColumns) = fread(fileID, header.numColumns - 1, 'double');
+                data(iRow, 2:header.numColumns) = fread(fileID, header.numColumns - 1, 'double');
 
             end
             clear iRow;
@@ -159,9 +159,9 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
         if success == 1
 
             % read the data (if needed)
-            if readData
-                [success, header, samples] = readPackages(fileID, header, fileType, readData);
-                if success == 0,    samples = [];       end
+            if readData == 1
+                [success, header, data] = readPackages(fileID, header, fileType, 1);
+                if success == 0,    data = [];       end
             end
             
         end
@@ -174,10 +174,10 @@ function [header, samples] = pt_loadData(inputFilepath, readData)
     
 end
 
-% if readData, assumes header.totalSamples is correct
-function [success, header, samples] = readPackages(fileID, header, fileType, readData)
+% Note: if readData == 1, then assumes header.totalSamples is set and correct
+function [success, header, data] = readPackages(fileID, header, fileType, readData)
     success = 0;
-    samples = [];
+    data = [];
     
     % set the read cursor at the start of the data
     fseek(fileID, header.posDataStart, 'bof');
@@ -187,10 +187,10 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
         
         % allocate a data matrix (based on the header information, make
         % sure .totalSamples is determined for efficient allocation)
-        samples = nan(header.totalSamples, header.numStreams + 2);
+        data = nan(header.totalSamples, header.numStreams + 2);
         
         % start at the first row in matrix index
-        iSample = 1;
+        rowIndex = 1;
         
     end
 
@@ -220,11 +220,11 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
             % pipeline data where at least one of the streams has more than one single sample
                         
             % variable to store the current stream that is being read in this package
-            iStream = 0;
+            streamIndex = 0;
             
             % loop as long as there are streams left for this sample-package and there is
             % another sample-chunk header available (uint16 + uint16 = 4 bytes)
-            while iStream < header.numStreams && ftell(fileID) + 4 <= header.filesize
+            while streamIndex < header.numStreams && ftell(fileID) + 4 <= header.filesize
 
                 % retrieve the number of streams from the sample-chunk header
                 numStreams          = fread(fileID, 1, 'uint16');
@@ -242,7 +242,7 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
                     if readData == 1
                     
                         % store the samples in the output matrix
-                        samples(iSample:iSample + numSamples - 1, 3 + iStream:3 + iStream + numStreams - 1) = ...
+                        data(rowIndex:rowIndex + numSamples - 1, 3 + streamIndex:3 + streamIndex + numStreams - 1) = ...
                             reshape(fread(fileID, numValues, 'double'), numStreams, [])';
                         
                     else
@@ -255,11 +255,12 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
                     if readData == 0
                         warning('Not all values in the last sample-chunk are written, discarding last sample-chunk and therefore sample-package. Stop reading.');
                     end
+                    success = 1;    % consider a partial read as successful, warning is enough
                     return;
                 end
 
-                % add to the number of
-                iStream = iStream + numStreams;
+                % add to the number of streams
+                streamIndex = streamIndex + numStreams;
                 
             end
 
@@ -268,12 +269,11 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
                 % when only determining the header
                 
                 % check if the expected number of streams were found
-                if  iStream == header.numStreams
+                if  streamIndex == header.numStreams
                     
                     % count the samples
-                    % Note: use the maximum number of samples per package. Packages are allowed to
-                    % differ in size, so allocate to facilite the stream with the largest number of
-                    % samples
+                    % Note: use the maximum number of samples per package. Packages are allowed to differ
+                    %       in size, so allocate to facilitate the stream with the largest number of samples
                     header.totalSamples = header.totalSamples + header.maxSamplesStream;
                     
                     % count the packages
@@ -281,20 +281,20 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
                 
                 else
                     warning('Not all streams in the last sample-package are written, discarding last sample-package. Stop reading.');
+                    success = 1;    % consider a partial read as successful, warning is enough
                     return;
                 end
                 
             else
                 % when reading the data
                 
-                % write the sampleID and elapsed (for all the rows that are reseved for this package)
+                % write the sampleID and elapsed (for all the rows that are reserved for this package)
                 % Note: this happens only here, so there are no unnecessary rows created in the scenario where
-                %       sample-packages are discarded (which we can only know after all the sample-chunk header are read
-                samples(iSample:iSample + header.maxSamplesStream - 1, 1) = repmat(sampleId, header.maxSamplesStream, 1);
-                samples(iSample:iSample + header.maxSamplesStream - 1, 2) = elapsed;
+                %       sample-packages are discarded (which we can only know after all the sample-chunk header are read)
+                data(rowIndex:rowIndex + header.maxSamplesStream - 1, 2) = elapsed;
 
                 % move the matrix write index
-                iSample = iSample + header.maxSamplesStream;
+                rowIndex = rowIndex + header.maxSamplesStream;
 
             end
             
@@ -330,21 +330,21 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
                     % store the samples in the output matrix
                     if numSamples == 1
                         
-                        samples(iSample, 1) = sampleId;
-                        samples(iSample, 2) = elapsed;
-                        samples(iSample, 3:3 + header.numStreams - 1) = fread(fileID, numValues, 'double');
+                        data(rowIndex, 1) = sampleId;
+                        data(rowIndex, 2) = elapsed;
+                        data(rowIndex, 3:3 + header.numStreams - 1) = fread(fileID, numValues, 'double');
                         
                     else
                         
-                        samples(iSample:iSample + numSamples - 1, 1) = repmat(sampleId, numSamples, 1);
-                        samples(iSample:iSample + numSamples - 1, 2) = elapsed;
-                        samples(iSample:iSample + numSamples - 1, 3:3 + header.numStreams - 1) = ...
+                        data(rowIndex:rowIndex + numSamples - 1, 1) = repmat(sampleId, numSamples, 1);
+                        data(rowIndex:rowIndex + numSamples - 1, 2) = elapsed;
+                        data(rowIndex:rowIndex + numSamples - 1, 3:3 + header.numStreams - 1) = ...
                             reshape(fread(fileID, numValues, 'double'), header.numStreams, [])';
 
                     end
 
                     % move the matrix write index
-                    iSample = iSample + numSamples;
+                    rowIndex = rowIndex + numSamples;
 
                 else
                     % only reading header information
@@ -362,10 +362,10 @@ function [success, header, samples] = readPackages(fileID, header, fileType, rea
                 if readData == 0
                     warning('Not all values in the last sample-package are written, discarding last sample-package. Stop reading.');
                 end
+                success = 1;    % consider a partial read as successful, warning is enough
                 return;
             end
-            
-            
+                        
         end
     
     end     % end sample-packages loop    
