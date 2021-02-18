@@ -291,6 +291,7 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                 % write the sampleID and elapsed (for all the rows that are reserved for this package)
                 % Note: this happens only here, so there are no unnecessary rows created in the scenario where
                 %       sample-packages are discarded (which we can only know after all the sample-chunk header are read)
+                data(rowIndex:rowIndex + header.maxSamplesStream - 1, 1) = repmat(sampleId, header.maxSamplesStream, 1);
                 data(rowIndex:rowIndex + header.maxSamplesStream - 1, 2) = elapsed;
 
                 % move the matrix write index
