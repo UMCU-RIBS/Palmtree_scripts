@@ -1,0 +1,7 @@
+# No matlab metafiles
+*.m~
+*.asv
+*.ps
+
+# no data files
+*.mat
