@@ -253,6 +253,7 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                     end
                 else
                     if readData == 0
+                        warning off backtrace;
                         warning('Not all values in the last sample-chunk are written, discarding last sample-chunk and therefore sample-package. Stop reading.');
                     end
                     success = 1;    % consider a partial read as successful, warning is enough
@@ -280,6 +281,7 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                     header.totalPackages = header.totalPackages + 1;                
                 
                 else
+                    warning off backtrace;
                     warning('Not all streams in the last sample-package are written, discarding last sample-package. Stop reading.');
                     success = 1;    % consider a partial read as successful, warning is enough
                     return;
@@ -361,6 +363,7 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
 
             else
                 if readData == 0
+                    warning off backtrace;
                     warning('Not all values in the last sample-package are written, discarding last sample-package. Stop reading.');
                 end
                 success = 1;    % consider a partial read as successful, warning is enough
