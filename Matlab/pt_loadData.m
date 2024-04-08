@@ -19,7 +19,7 @@
 %                      information can be used to find the exact channel(s) and where in the pipeline.
 %                      Returns empty on failure
 %   
-%   Copyright (C) 2021, Max van den Boom (Lab of Nick Ramsey, University Medical Center Utrecht, The Netherlands)
+%   Copyright (C) 2024, Max van den Boom (Lab of Nick Ramsey, University Medical Center Utrecht, The Netherlands)
 
 %   This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License
 %   as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -36,14 +36,14 @@ function [header, data] = pt_loadData(inputFilepath, readData)
     
     % check if the dat input file exist
     if exist(inputFilepath, 'file') == 0
-        fprintf(2, ['Error: data file ', strrep(inputFilepath, '\', '\\'), ' does not exist\n']);
+        fprintf(2, ['Error: data file ', char(strrep(inputFilepath, '\', '\\')), ' does not exist\n']);
         return;
     end
 
     % open the file
     fileID = fopen(inputFilepath, 'rb', 'l');
     if fileID == -1
-        fprintf(2, ['Error: could not open data file ', inputFilepath, '\n']);
+        fprintf(2, ['Error: could not open data file ', char(strrep(inputFilepath, '\', '\\')), '\n']);
         return;
     end
     
@@ -57,7 +57,7 @@ function [header, data] = pt_loadData(inputFilepath, readData)
     
     % read the version and check whether it is valid
     header.version = fread(fileID, 1, 'int32');
-    if (header.version ~= 1 && header.version ~= 2)
+    if (header.version ~= 1 && header.version ~= 2 && header.version ~= 3)
         fprintf(2, ['Error: unknown data version ', num2str(header.version), '\n']);
         return;
     end
@@ -65,18 +65,23 @@ function [header, data] = pt_loadData(inputFilepath, readData)
     % read the code
     header.code = fread(fileID, 3, '*char')';
     
-    % retrieve the epochs (V2)
-    if (header.version == 2)
+    % retrieve the epochs (V2 & V3)
+    if (header.version == 2 || header.version == 3)
         header.runStartEpoch                = fread(fileID, 1, 'int64');
         header.fileStartEpoch               = fread(fileID, 1, 'int64');
     end
     
+    % retrieve whether source input time is included (only in source data-file & V3)
+    if strcmpi(header.code, 'src') && header.version == 3
+        header.includesSourceInputTime      = fread(fileID, 1, 'uint8');
+    end
+            
     % 
     header.sampleRate                       = fread(fileID, 1, 'double');
     header.numPlaybackStreams               = fread(fileID, 1, 'int32');
     
-    % #streams + streams details (V2)
-    if (header.version == 2)
+    % #streams + streams details (V2 & V3)
+    if (header.version == 2 || header.version == 3)
         header.numStreams                   = fread(fileID, 1, 'int32');
         for iStream = 1:header.numStreams
             streamStruct                    = struct;
@@ -143,7 +148,7 @@ function [header, data] = pt_loadData(inputFilepath, readData)
 
         end
         
-    elseif (header.version == 2)
+    elseif (header.version == 2 || header.version == 3)
     
         % counter for the number of samples
         header.totalSamples     = 0;
@@ -179,29 +184,39 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
     success = 0;
     data = [];
     
+    % determine whether source-input-timestamps are included
+    includesInpuTime = fileType == 0 && header.includesSourceInputTime == 1;
+    
     % set the read cursor at the start of the data
     fseek(fileID, header.posDataStart, 'bof');
     
+    % determine the package header size and the column to start the data at
+    if fileType == 0
+        if includesInpuTime == 1
+            packageHeaderSize = 22;     % .src = SamplePackageID <uint32> + elapsed <double> + source-input-time <double> + #samples <uint16> = 22 bytes
+            dataNumHeaderColumns = 3;
+        else
+            packageHeaderSize = 14;     % .src = SamplePackageID <uint32> + elapsed <double> + #samples <uint16> = 14 bytes
+            dataNumHeaderColumns = 2;
+        end
+    elseif fileType == 1
+        packageHeaderSize = 12;     % .dat = SamplePackageID <uint32> + elapsed <double> = 12 bytes
+        dataNumHeaderColumns = 2;
+    else
+        fprintf(2, 'Error: could not determine package header size, not reading data\n');
+        return;
+    end
+
     % when reading the data
     if readData
         
         % allocate a data matrix (based on the header information, make
         % sure .totalSamples is determined for efficient allocation)
-        data = nan(header.totalSamples, header.numStreams + 2);
+        data = nan(header.totalSamples, header.numStreams + dataNumHeaderColumns);
         
         % start at the first row in matrix index
         rowIndex = 1;
         
-    end
-
-    % determine the package header size
-    if fileType == 0
-        packageHeaderSize = 14;     % .src = SamplePackageID <uint32> + elapsed <double> + #samples <uint16> = 14 bytes
-    elseif fileType == 1
-        packageHeaderSize = 12;     % .dat = SamplePackageID <uint32> + elapsed <double> = 12 bytes
-    else
-        fprintf(2, 'Error: could not determine package header size, not reading data\n');
-        return;
     end
 
     % loop as long as there another sample-package header is available
@@ -211,8 +226,15 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
         if readData == 1
             sampleId    = fread(fileID, 1, 'uint32');
             elapsed     = fread(fileID, 1, 'double');
+            if includesInpuTime
+                sourceInputTime = fread(fileID, 1, 'double');
+            end
         else
-            fseek(fileID, (4 + 8), 'cof');
+            if includesInpuTime
+                fseek(fileID, (4 + 8 + 8), 'cof');
+            else
+                fseek(fileID, (4 + 8), 'cof');
+            end
         end
         
         % 
@@ -242,7 +264,7 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                     if readData == 1
                     
                         % store the samples in the output matrix
-                        data(rowIndex:rowIndex + numSamples - 1, 3 + streamIndex:3 + streamIndex + numStreams - 1) = ...
+                        data(rowIndex:rowIndex + numSamples - 1, 1 + dataNumHeaderColumns + streamIndex:1 + dataNumHeaderColumns + streamIndex + numStreams - 1) = ...
                             reshape(fread(fileID, numValues, 'double'), numStreams, [])';
                         
                     else
@@ -264,7 +286,6 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                 streamIndex = streamIndex + numStreams;
                 
             end
-
             
             if readData == 0
                 % when only determining the header
@@ -272,10 +293,8 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                 % check if the expected number of streams were found
                 if  streamIndex == header.numStreams
                     
-                    % count the samples
-                    % Note: use the maximum number of samples per package. Packages are allowed to differ
-                    %       in size, so allocate to facilitate the stream with the largest number of samples
-                    header.totalSamples = header.totalSamples + header.maxSamplesStream;
+                    % count the number of samples
+                    header.totalSamples = header.totalSamples + numSamples;
                     
                     % count the packages
                     header.totalPackages = header.totalPackages + 1;                
@@ -293,11 +312,11 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                 % write the sampleID and elapsed (for all the rows that are reserved for this package)
                 % Note: this happens only here, so there are no unnecessary rows created in the scenario where
                 %       sample-packages are discarded (which we can only know after all the sample-chunk header are read)
-                data(rowIndex:rowIndex + header.maxSamplesStream - 1, 1) = repmat(sampleId, header.maxSamplesStream, 1);
-                data(rowIndex:rowIndex + header.maxSamplesStream - 1, 2) = elapsed;
+                data(rowIndex:rowIndex + numSamples - 1, 1) = repmat(sampleId, numSamples, 1);
+                data(rowIndex:rowIndex + numSamples - 1, 2) = elapsed;
 
                 % move the matrix write index
-                rowIndex = rowIndex + header.maxSamplesStream;
+                rowIndex = rowIndex + numSamples;
 
             end
             
@@ -335,13 +354,20 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
                         
                         data(rowIndex, 1) = sampleId;
                         data(rowIndex, 2) = elapsed;
-                        data(rowIndex, 3:3 + header.numStreams - 1) = fread(fileID, numValues, 'double');
+                        if includesInpuTime
+                            data(rowIndex, 3) = sourceInputTime;
+                        end
+                        data(rowIndex, 1 + dataNumHeaderColumns:1 + dataNumHeaderColumns + header.numStreams - 1) = ...
+                            fread(fileID, numValues, 'double');
                         
                     else
                         
                         data(rowIndex:rowIndex + numSamples - 1, 1) = repmat(sampleId, numSamples, 1);
                         data(rowIndex:rowIndex + numSamples - 1, 2) = elapsed;
-                        data(rowIndex:rowIndex + numSamples - 1, 3:3 + header.numStreams - 1) = ...
+                        if includesInpuTime
+                            data(rowIndex:rowIndex + numSamples - 1, 3) = sourceInputTime;
+                        end
+                        data(rowIndex:rowIndex + numSamples - 1, 1 + dataNumHeaderColumns:1 + dataNumHeaderColumns + header.numStreams - 1) = ...
                             reshape(fread(fileID, numValues, 'double'), header.numStreams, [])';
 
                     end
