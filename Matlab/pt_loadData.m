@@ -185,7 +185,7 @@ function [success, header, data] = readPackages(fileID, header, fileType, readDa
     data = [];
     
     % determine whether source-input-timestamps are included
-    includesInpuTime = fileType == 0 && header.includesSourceInputTime == 1;
+    includesInpuTime = fileType == 0 && isfield(header, 'includesSourceInputTime') && header.includesSourceInputTime == 1;
     
     % set the read cursor at the start of the data
     fseek(fileID, header.posDataStart, 'bof');

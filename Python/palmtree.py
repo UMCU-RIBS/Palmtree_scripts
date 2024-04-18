@@ -181,7 +181,7 @@ def __read_packages(file, header, file_type, read_data):
     data = None
 
     # determine whether source-input-timestamps are included
-    includes_input_time = file_type == 0 and header['includes_source_input_time']
+    includes_input_time = file_type == 0 and 'includes_source_input_time' in header and header['includes_source_input_time']
 
     # set the read cursor at the start of the data
     file.seek(header['pos_data_start'], 0)
