@@ -7,8 +7,8 @@
 %   [header, data] = pt_loadData(filepath, readData)
 %
 %       filepath            = path to a run data file
-%       readData (optional) = If set to 0 (default), only the header will be read.
-%                             If set to 1, both the header and the data will be read
+%       readData (optional) = If set to 1 (default), both the header and the data will be read
+%                             If set to 0, only the header will be read.
 %
 %   Returns: 
 %       header       = The data header information as a struct, includes information such as the sampling
@@ -28,8 +28,8 @@
 %   You should have received a copy of the GNU General Public License along with this program.  If not, see <https://www.gnu.org/licenses/>.
 %
 function [header, data] = pt_loadData(inputFilepath, readData)
-    if ~exist('readData', 'var') || isempty(readData),  readData = [];   end    
-
+    if ~exist('readData', 'var') || isempty(readData),  readData = 1;   end
+        
     % default return values
     header = [];
     data = [];

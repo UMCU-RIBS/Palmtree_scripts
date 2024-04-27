@@ -19,7 +19,7 @@ from math import floor
 import numpy as np
 
 
-def load_data(filepath, read_data=False):
+def load_data(filepath, read_data=True):
     """
     Read the source data (.src) or pipeline data (.dat) of a Palmtree run. The source data (.src) file contains
     the data as it is received by the source module. The pipeline data (.dat) file contains the data streams that
@@ -27,8 +27,8 @@ def load_data(filepath, read_data=False):
 
     Args:
         filepath (str):                 path to a run data file
-        read_data (bool):               If set to 0 (default), only the header will be read.
-                                        If set to 1, both the header and the data will be read
+        read_data (bool):               If set to 1 (default), both the header and the data will be read
+                                        If set to 0, only the header will be read.
 
     Returns:
         header (Dictionary):            The data header information as a struct, includes information such as the
